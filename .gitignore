@@ -73,3 +73,7 @@ build/
 *.moved-aside
 *.xccheckout
 *.xcscmblueprint
+
+# Release Build Script
+build_release.sh
+Build/
