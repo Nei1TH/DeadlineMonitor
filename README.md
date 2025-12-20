@@ -4,6 +4,11 @@ A clean, minimalist, and "Obsidian-like" macOS deadline tracking application bui
 
 Deadline Monitor gives you full control over your data by storing everything in a local JSON file (Vault). It features a beautiful countdown interface, urgency-based color coding, and automatic cleanup of old tasks.
 
+## Demo
+<img width="453" height="553" alt="DM_Demo1" src="https://github.com/user-attachments/assets/225d9cfc-d6ec-4e06-98cc-8e0a16db7861" />
+
+<img width="455" height="549" alt="DM_Demo2" src="https://github.com/user-attachments/assets/6e51d437-6f2e-4bd2-9743-419f100efda4" />
+
 ## Features
 
 - **Privacy First**: Your data lives in a local JSON file. You choose where to store it (Documents, iCloud Drive, etc.).
