@@ -24,8 +24,19 @@ struct AppEntryView: View {
             }
         }
         // Set a minimum window size for the app
-        .frame(minWidth: 800, minHeight: 600)
+        .frame(minWidth: 300, minHeight: 400)
         .onAppear {
+            // Set default window size (only if not restored by system)
+            if let window = NSApplication.shared.windows.first {
+                let defaultSize = CGSize(width: 300, height: 300)
+                // Only resize if the current size is the system default (usually small)
+                // or you can force it every time by removing the condition.
+                if window.frame.width < defaultSize.width || window.frame.height < defaultSize.height {
+                    window.setContentSize(defaultSize)
+                    window.center() // Optional: Center the window
+                }
+            }
+            
             // When the app starts, try to restore the last opened vault
             loadLastOpenedVault()
         }

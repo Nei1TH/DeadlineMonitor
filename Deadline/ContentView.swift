@@ -429,7 +429,7 @@ struct ContentView: View {
             EditDeadlineView(viewModel: viewModel, item: item)
         }
         // Minimum window size
-        .frame(minWidth: 400, minHeight: 300)
+        .frame(minWidth: 200, minHeight: 300)
     }
 }
 
