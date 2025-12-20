@@ -1,23 +1,36 @@
 import SwiftUI
 
-// MARK: - 1. Model (數據模型)
-// 定義一個 Deadline 項目包含什麼資訊
-// Identifiable: 讓 SwiftUI 的 List 知道如何區分每一行
-struct DeadlineItem: Identifiable {
-    let id = UUID()
+// MARK: - 1. Model
+
+/// Represents a single deadline item.
+/// Conforms to `Identifiable` for use in Lists, and `Codable` for JSON serialization.
+struct DeadlineItem: Identifiable, Codable {
+    let id: UUID
     var title: String
     var targetDate: Date
-    var createdDate: Date = Date() // 用於計算總進度
-    var isCompleted: Bool = false
+    var createdDate: Date
+    var isCompleted: Bool
+    var completedDate: Date? // Records when the item was marked as completed
+
+    init(id: UUID = UUID(), title: String, targetDate: Date, createdDate: Date = Date(), isCompleted: Bool = false, completedDate: Date? = nil) {
+        self.id = id
+        self.title = title
+        self.targetDate = targetDate
+        self.createdDate = createdDate
+        self.isCompleted = isCompleted
+        self.completedDate = completedDate
+    }
 }
 
-// MARK: - 2. ViewModel (邏輯層)
-// 負責處理數據和時間邏輯
+// MARK: - 2. ViewModel
+
+/// Defines available sorting options for the deadline list.
 enum SortOption: CaseIterable {
     case addedOrder
     case titleAZ
     case dateNearest
     
+    /// Returns the next sort option in the cycle (for toggle button).
     var next: SortOption {
         let all = Self.allCases
         let idx = all.firstIndex(of: self)!
@@ -42,6 +55,7 @@ enum SortOption: CaseIterable {
     }
 }
 
+/// Defines filtering options (Active vs Completed).
 enum FilterOption: String, CaseIterable, Identifiable {
     case active = "Active"
     case completed = "Completed"
@@ -49,8 +63,8 @@ enum FilterOption: String, CaseIterable, Identifiable {
     var id: String { self.rawValue }
 }
 
+/// The ViewModel responsible for managing deadline data, sorting, filtering, and time updates.
 class DeadlineViewModel: ObservableObject {
-    // @Published: 當這個陣列改變時，通知 View 更新
     @Published var deadlines: [DeadlineItem] = []
     @Published var now = Date()
     @Published var sortOption: SortOption = .addedOrder {
@@ -61,7 +75,9 @@ class DeadlineViewModel: ObservableObject {
     @Published var filterOption: FilterOption = .active
 
     private var timer: Timer?
+    private let jsonManager: JSONManager
 
+    /// Returns the list of deadlines filtered by the selected `filterOption`.
     var filteredDeadlines: [DeadlineItem] {
         let filtered: [DeadlineItem]
         switch filterOption {
@@ -73,17 +89,61 @@ class DeadlineViewModel: ObservableObject {
         return filtered
     }
 
-    init() {
+    init(fileURL: URL) {
+        self.jsonManager = JSONManager(fileURL: fileURL)
         startTimer()
-        addMockData()
+        loadData()
+    }
+    
+    /// Loads data from the JSON file.
+    /// If the file is empty or doesn't exist, it loads mock data for demonstration.
+    func loadData() {
+        let items = jsonManager.load()
+        if items.isEmpty {
+            if !jsonManager.fileExists() {
+                addMockData()
+            } else {
+                deadlines = []
+            }
+        } else {
+            deadlines = items
+            cleanupOldCompletedItems() // Auto-delete old completed items
+            sortDeadlines()
+        }
+    }
+    
+    /// Removes completed items that are older than 30 days.
+    func cleanupOldCompletedItems() {
+        let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 60 * 60)
+        let initialCount = deadlines.count
+        
+        deadlines.removeAll { item in
+            if let completedDate = item.completedDate {
+                return item.isCompleted && completedDate < thirtyDaysAgo
+            }
+            return false
+        }
+        
+        if deadlines.count != initialCount {
+            print("🧹 Cleaned up \(initialCount - deadlines.count) old completed items.")
+            saveData()
+        }
+    }
+    
+    /// Persists the current list of deadlines to the JSON file.
+    func saveData() {
+        jsonManager.save(items: deadlines)
     }
 
+    /// Starts a timer to update the `now` property every second.
+    /// This ensures the countdown timer in the UI stays fresh.
     func startTimer() {
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             self.now = Date()
         }
     }
 
+    /// Adds sample data for testing purposes.
     func addMockData() {
         let calendar = Calendar.current
         // Mock Data: 16 days, 12 days, 6 days, 3 days
@@ -107,11 +167,13 @@ class DeadlineViewModel: ObservableObject {
             DeadlineItem(title: "Team Meeting", targetDate: d8)
         ]
         sortDeadlines()
+        saveData()
     }
 
     func addNewDeadline(title: String, targetDate: Date) {
         deadlines.append(DeadlineItem(title: title, targetDate: targetDate))
         sortDeadlines()
+        saveData()
     }
 
     func updateDeadline(id: UUID, newTitle: String, newTargetDate: Date) {
@@ -119,12 +181,21 @@ class DeadlineViewModel: ObservableObject {
             deadlines[index].title = newTitle
             deadlines[index].targetDate = newTargetDate
             sortDeadlines()
+            saveData()
         }
     }
 
     func toggleCompletion(for item: DeadlineItem) {
         if let index = deadlines.firstIndex(where: { $0.id == item.id }) {
             deadlines[index].isCompleted.toggle()
+            
+            if deadlines[index].isCompleted {
+                deadlines[index].completedDate = Date()
+            } else {
+                deadlines[index].completedDate = nil
+            }
+            
+            saveData()
         }
     }
 
@@ -139,6 +210,7 @@ class DeadlineViewModel: ObservableObject {
         }
     }
 
+    /// Formats the remaining time into a human-readable string.
     func timeRemainingString(target: Date) -> String {
         let diff = target.timeIntervalSince(now)
         if diff <= 0 { return "⚠️ Expired" }
@@ -155,7 +227,8 @@ class DeadlineViewModel: ObservableObject {
         }
     }
     
-    // 根據剩餘時間決定顏色
+    /// Determines the urgency color based on time remaining.
+    /// Blue: > 2 weeks, Green: > 1 week, Orange: > 3 days, Red: <= 3 days.
     func urgencyColor(for item: DeadlineItem) -> Color {
         if item.isCompleted { return .gray }
         
@@ -173,13 +246,16 @@ class DeadlineViewModel: ObservableObject {
         }
     }
 }
-// Adding Deadline View
+
+// MARK: - 3. Views
+
+/// View for adding a new deadline.
 struct AddDeadlineView: View {
     @Environment(\.presentationMode) var presentationMode
     @ObservedObject var viewModel: DeadlineViewModel
 
     @State private var title = ""
-    @State private var targetDate = Date().addingTimeInterval(86400) // Default to tomorrow (86400 seconds)
+    @State private var targetDate = Date().addingTimeInterval(86400) // Default to tomorrow
     
     var body: some View {
         VStack {
@@ -216,7 +292,7 @@ struct AddDeadlineView: View {
 }
 
 
-// Edit Deadline View
+/// View for editing an existing deadline.
 struct EditDeadlineView: View {
     @Environment(\.presentationMode) var presentationMode
     @ObservedObject var viewModel: DeadlineViewModel
@@ -267,15 +343,24 @@ struct EditDeadlineView: View {
     }
 }
 
-// Main View
+/// The main content view displaying the list of deadlines.
 struct ContentView: View {
-    @StateObject private var viewModel = DeadlineViewModel()
+    @StateObject private var viewModel: DeadlineViewModel
     @State private var isShowingAddSheet = false
     @State private var itemToEdit: DeadlineItem?
+    
+    /// Closure to handle the "Close Vault" action.
+    var onClose: () -> Void
+
+    init(fileURL: URL, onClose: @escaping () -> Void) {
+        _viewModel = StateObject(wrappedValue: DeadlineViewModel(fileURL: fileURL))
+        self.onClose = onClose
+    }
 
     var body: some View {
         HStack {
             List {
+                // Filter Segmented Control
                 Picker("Filter", selection: $viewModel.filterOption) {
                     ForEach(FilterOption.allCases) { option in
                         Text(option.rawValue).tag(option)
@@ -284,6 +369,7 @@ struct ContentView: View {
                 .pickerStyle(SegmentedPickerStyle())
                 .padding(.bottom, 8)
                 
+                // Deadline List
                 ForEach(viewModel.filteredDeadlines) { item in
                     DeadlineRow(item: item, viewModel: viewModel)
                         .padding(.vertical, 8)
@@ -305,9 +391,18 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Deadline Monitor")
-            // macOS 上通常左側是列表，這裡我們做一個簡單的單欄佈局
+            // Use SidebarListStyle for standard macOS sidebar appearance
             .listStyle(SidebarListStyle())
             .toolbar {
+                // Leading Toolbar Item: Close Vault
+                ToolbarItem(placement: .navigation) {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle")
+                        Text("Close Vault")
+                    }
+                }
+                
+                // Trailing Toolbar Items: Sort & Add
                 ToolbarItem(placement: .primaryAction) {
                     HStack {
                         // Sort Toggle Button
@@ -315,10 +410,13 @@ struct ContentView: View {
                             viewModel.sortOption = viewModel.sortOption.next
                         }) {
                             Image(systemName: viewModel.sortOption.iconName)
+                                .help("Change Sort Order")
                         }
                         
+                        // Add Button
                         Button(action: { isShowingAddSheet = true }) {
                             Image(systemName: "plus")
+                                .help("Add New Deadline")
                         }
                     }
                 }
@@ -330,16 +428,16 @@ struct ContentView: View {
         .sheet(item: $itemToEdit) { item in
             EditDeadlineView(viewModel: viewModel, item: item)
         }
-        // min size of window
+        // Minimum window size
         .frame(minWidth: 400, minHeight: 300)
     }
 }
 
-// 抽離出單獨的 Row View，讓代碼更整潔
+/// A single row view for the deadline list.
 struct DeadlineRow: View {
     let item: DeadlineItem
     @ObservedObject var viewModel: DeadlineViewModel
-
+    
     var body: some View {
         HStack(spacing: 12) {
             // Urgency Indicator Bar
@@ -347,7 +445,7 @@ struct DeadlineRow: View {
                 .fill(viewModel.urgencyColor(for: item))
                 .frame(width: 4)
                 .padding(.vertical, 4)
-
+            
             // Title & Due Date
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
@@ -365,9 +463,9 @@ struct DeadlineRow: View {
             // Remaining Time (Primary Visual Element)
             if item.isCompleted {
                 Text("Done")
-                    .font(.system(.title3, design: .monospaced))
-                    .fontWeight(.bold)
-                    .foregroundColor(.gray)
+                .font(.system(.title3, design: .monospaced))
+                .fontWeight(.bold)
+                .foregroundColor(.gray)
             } else {
                 Text(viewModel.timeRemainingString(target: item.targetDate))
                     .font(.system(.title3, design: .monospaced)) // Larger, monospaced
@@ -376,14 +474,15 @@ struct DeadlineRow: View {
             }
         }
         .padding(.vertical, 4)
-        // No full-row background color, keeping it neutral
     }
 }
 
+// MARK: - Previews
 
-// 預覽代碼 (僅供 Xcode Canvas 使用)
+// Preview provider for Xcode Canvas
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView()
+        // Provide a dummy URL for preview purposes
+        ContentView(fileURL: URL(fileURLWithPath: "/tmp/test.json"), onClose: {})
     }
 }
