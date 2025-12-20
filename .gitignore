@@ -75,5 +75,4 @@ build/
 *.xcscmblueprint
 
 # Release Build Script
-build_release.sh
 Build/
