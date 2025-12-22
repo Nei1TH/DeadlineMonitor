@@ -28,7 +28,7 @@ Deadline Monitor gives you full control over your data by storing everything in 
 1) 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Deadline-Monitor.git
+   git clone [https://github.com/Nei1TH/DeadlineMonitor]
    ```
 2. **Open in Xcode**:
    Double-click `Deadline.xcodeproj`.
