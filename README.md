@@ -1,6 +1,6 @@
 # Deadline Monitor
 
-A clean, minimalist, and "Obsidian-like" macOS deadline tracking application built with **SwiftUI**.
+A clean and minimalist macOS deadline tracking application built with **SwiftUI**.
 
 Deadline Monitor gives you full control over your data by storing everything in a local JSON file (Vault). It features a beautiful countdown interface, urgency-based color coding, and automatic cleanup of old tasks.
 
