@@ -11,7 +11,7 @@ Deadline Monitor gives you full control over your data by storing everything in 
 
 ## Features
 
-- **Privacy First**: Your data lives in a local JSON file. You choose where to store it (Documents, iCloud Drive, etc.).
+- **Data Storage**: Your data lives in a local JSON file. You choose where to store it (Documents, iCloud Drive, etc.).
 - **Urgency Color Coding**: Visual cues help you prioritize:
   - 🔵 **Blue**: > 2 weeks left
   - 🟢 **Green**: > 1 week left
