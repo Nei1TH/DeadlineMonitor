@@ -24,30 +24,17 @@ Deadline Monitor gives you full control over your data by storing everything in 
 - **Language**: Swift 5.5+
 - **Framework**: SwiftUI
 
-## Getting Started
-1) 
-1. **Clone the repository**:
+## Getting Started 
+1）1. **Clone the repository**:
    ```bash
    git clone https://github.com/Nei1TH/DeadlineMonitor
    ```
-2. **Open in Xcode**:
+  2. **Open in Xcode**:
    Double-click `Deadline.xcodeproj`.
-3. **Build and Run**:
+  3. **Build and Run**:
    Press `Cmd + R` to start the app.
 
-2)
-Download compress file in release page
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
+2) Download compress file in release page
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
