@@ -5,6 +5,7 @@ import SwiftUI
 struct AppEntryView: View {
     // Stores the currently open file URL. If nil, the WelcomeView is shown.
     @State private var currentFileURL: URL?
+    @State private var alertMessage: String?
     
     // UserDefaults Key for storing the Security Scoped Bookmark
     private let bookmarkKey = "LastOpenedVaultBookmark"
@@ -25,6 +26,16 @@ struct AppEntryView: View {
         }
         // Set a minimum window size for the app
         .frame(minWidth: 300, minHeight: 400)
+        .alert("Error", isPresented: Binding(
+            get: { alertMessage != nil },
+            set: { isPresented in
+                if !isPresented { alertMessage = nil }
+            }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(alertMessage ?? "")
+        }
         .onAppear {
             // Set default window size (only if not restored by system)
             if let window = NSApplication.shared.windows.first {
@@ -50,10 +61,7 @@ struct AppEntryView: View {
         // Note: For URLs restored from bookmarks, this step is mandatory.
         // For URLs coming directly from the file importer, the system usually grants temporary access,
         // but we call it explicitly for consistency.
-        let accessing = url.startAccessingSecurityScopedResource()
-        if !accessing {
-            print("⚠️ Warning: Could not start accessing security scoped resource directly. (Might be a standard file path)")
-        }
+        _ = url.startAccessingSecurityScopedResource()
         
         // 2. Save a bookmark to UserDefaults to remember this vault across app launches.
         saveBookmark(for: url)
@@ -85,9 +93,8 @@ struct AppEntryView: View {
             // Create a security-scoped bookmark
             let data = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
             UserDefaults.standard.set(data, forKey: bookmarkKey)
-            print("✅ Vault bookmark saved.")
         } catch {
-            print("❌ Failed to save vault bookmark: \(error)")
+            alertMessage = error.localizedDescription
         }
     }
     
@@ -101,23 +108,21 @@ struct AppEntryView: View {
             let url = try URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
             
             if isStale {
-                print("⚠️ Bookmark is stale, attempting to renew...")
                 saveBookmark(for: url)
             }
             
             // Try to access the resource
             let accessing = url.startAccessingSecurityScopedResource()
             if accessing {
-                print("✅ Automatically opened vault: \(url.path)")
                 currentFileURL = url
             } else {
-                print("❌ Failed to access restored vault URL. Permission denied.")
                 UserDefaults.standard.removeObject(forKey: bookmarkKey)
+                alertMessage = "Failed to access the last opened vault. Permission denied."
             }
         } catch {
-            print("❌ Failed to resolve bookmark: \(error)")
             // If resolution fails (e.g., file moved or deleted), clear the bookmark.
             UserDefaults.standard.removeObject(forKey: bookmarkKey)
+            alertMessage = error.localizedDescription
         }
     }
 }

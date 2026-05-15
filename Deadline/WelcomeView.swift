@@ -12,6 +12,7 @@ struct WelcomeView: View {
     
     @State private var isImporting = false
     @State private var isExporting = false
+    @State private var alertMessage: String?
     /// An empty document instance used as a template for creating new files.
     @State private var document = JSONDocument(items: [])
 
@@ -56,6 +57,16 @@ struct WelcomeView: View {
         }
         .padding(50)
         .frame(width: 600, height: 400)
+        .alert("Error", isPresented: Binding(
+            get: { alertMessage != nil },
+            set: { isPresented in
+                if !isPresented { alertMessage = nil }
+            }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(alertMessage ?? "")
+        }
         // MARK: - File Import (Open Existing)
         .fileImporter(
             isPresented: $isImporting,
@@ -68,7 +79,7 @@ struct WelcomeView: View {
                     onFileSelected(url)
                 }
             case .failure(let error):
-                print("Import failed: \(error.localizedDescription)")
+                alertMessage = error.localizedDescription
             }
         }
         // MARK: - File Export (Create New)
@@ -82,7 +93,7 @@ struct WelcomeView: View {
             case .success(let url):
                 onFileSelected(url)
             case .failure(let error):
-                print("Export failed: \(error.localizedDescription)")
+                alertMessage = error.localizedDescription
             }
         }
     }

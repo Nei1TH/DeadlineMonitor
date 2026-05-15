@@ -7,19 +7,59 @@ import SwiftUI
 struct DeadlineItem: Identifiable, Codable {
     let id: UUID
     var title: String
+    var details: String
     var targetDate: Date
     var createdDate: Date
     var isCompleted: Bool
     var completedDate: Date? // Records when the item was marked as completed
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case details
+        case targetDate
+        case createdDate
+        case isCompleted
+        case completedDate
+    }
 
-    init(id: UUID = UUID(), title: String, targetDate: Date, createdDate: Date = Date(), isCompleted: Bool = false, completedDate: Date? = nil) {
+    init(id: UUID = UUID(), title: String, details: String = "", targetDate: Date, createdDate: Date = Date(), isCompleted: Bool = false, completedDate: Date? = nil) {
         self.id = id
         self.title = title
+        self.details = details
         self.targetDate = targetDate
         self.createdDate = createdDate
         self.isCompleted = isCompleted
         self.completedDate = completedDate
     }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.details = try container.decodeIfPresent(String.self, forKey: .details) ?? ""
+        self.targetDate = try container.decode(Date.self, forKey: .targetDate)
+        self.createdDate = try container.decodeIfPresent(Date.self, forKey: .createdDate) ?? Date()
+        self.isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+        self.completedDate = try container.decodeIfPresent(Date.self, forKey: .completedDate)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(details, forKey: .details)
+        try container.encode(targetDate, forKey: .targetDate)
+        try container.encode(createdDate, forKey: .createdDate)
+        try container.encode(isCompleted, forKey: .isCompleted)
+        try container.encodeIfPresent(completedDate, forKey: .completedDate)
+    }
+}
+
+struct AppAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
 }
 
 // MARK: - 2. ViewModel
@@ -67,6 +107,7 @@ enum FilterOption: String, CaseIterable, Identifiable {
 class DeadlineViewModel: ObservableObject {
     @Published var deadlines: [DeadlineItem] = []
     @Published var now = Date()
+    @Published var activeAlert: AppAlert?
     @Published var sortOption: SortOption = .addedOrder {
         didSet {
             sortDeadlines()
@@ -98,17 +139,26 @@ class DeadlineViewModel: ObservableObject {
     /// Loads data from the JSON file.
     /// If the file is empty or doesn't exist, it loads mock data for demonstration.
     func loadData() {
-        let items = jsonManager.load()
-        if items.isEmpty {
+        do {
+            let items = try jsonManager.load()
+            if items.isEmpty {
+                if !jsonManager.fileExists() {
+                    addMockData()
+                } else {
+                    deadlines = []
+                }
+            } else {
+                deadlines = items
+                cleanupOldCompletedItems()
+                sortDeadlines()
+            }
+        } catch {
             if !jsonManager.fileExists() {
                 addMockData()
             } else {
                 deadlines = []
             }
-        } else {
-            deadlines = items
-            cleanupOldCompletedItems() // Auto-delete old completed items
-            sortDeadlines()
+            activeAlert = AppAlert(title: "Error", message: error.localizedDescription)
         }
     }
     
@@ -132,7 +182,11 @@ class DeadlineViewModel: ObservableObject {
     
     /// Persists the current list of deadlines to the JSON file.
     func saveData() {
-        jsonManager.save(items: deadlines)
+        do {
+            try jsonManager.save(items: deadlines)
+        } catch {
+            activeAlert = AppAlert(title: "Error", message: error.localizedDescription)
+        }
     }
 
     /// Starts a timer to update the `now` property every second.
@@ -170,15 +224,16 @@ class DeadlineViewModel: ObservableObject {
         saveData()
     }
 
-    func addNewDeadline(title: String, targetDate: Date) {
-        deadlines.append(DeadlineItem(title: title, targetDate: targetDate))
+    func addNewDeadline(title: String, details: String, targetDate: Date) {
+        deadlines.append(DeadlineItem(title: title, details: details, targetDate: targetDate))
         sortDeadlines()
         saveData()
     }
 
-    func updateDeadline(id: UUID, newTitle: String, newTargetDate: Date) {
+    func updateDeadline(id: UUID, newTitle: String, newDetails: String, newTargetDate: Date) {
         if let index = deadlines.firstIndex(where: { $0.id == id }) {
             deadlines[index].title = newTitle
+            deadlines[index].details = newDetails
             deadlines[index].targetDate = newTargetDate
             sortDeadlines()
             saveData()
@@ -197,6 +252,24 @@ class DeadlineViewModel: ObservableObject {
             
             saveData()
         }
+    }
+    
+    func delete(itemsWithIDs ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        deadlines.removeAll { ids.contains($0.id) }
+        saveData()
+    }
+    
+    func delete(at offsets: IndexSet) {
+        let ids: [UUID] = offsets.compactMap { index in
+            guard index < filteredDeadlines.count else { return nil }
+            return filteredDeadlines[index].id
+        }
+        delete(itemsWithIDs: Set(ids))
+    }
+    
+    func delete(item: DeadlineItem) {
+        delete(itemsWithIDs: Set([item.id]))
     }
 
     func sortDeadlines() {
@@ -255,6 +328,7 @@ struct AddDeadlineView: View {
     @ObservedObject var viewModel: DeadlineViewModel
 
     @State private var title = ""
+    @State private var details = ""
     @State private var targetDate = Date().addingTimeInterval(86400) // Default to tomorrow
     
     var body: some View {
@@ -263,6 +337,11 @@ struct AddDeadlineView: View {
                 Section(header: Text("Deadline Details")) {
                     TextField("Enter deadline title", text: $title)
                     DatePicker("Select target date", selection: $targetDate, displayedComponents: [.date, .hourAndMinute])
+                }
+                
+                Section(header: Text("Description")) {
+                    TextEditor(text: $details)
+                        .frame(minHeight: 100)
                 }
 
                 Section {
@@ -276,6 +355,7 @@ struct AddDeadlineView: View {
                         Button("Add Deadline") {
                             viewModel.addNewDeadline(
                                 title: title,
+                                details: details,
                                 targetDate: targetDate
                             )
                             presentationMode.wrappedValue.dismiss()
@@ -299,12 +379,14 @@ struct EditDeadlineView: View {
     var item: DeadlineItem
 
     @State private var title: String
+    @State private var details: String
     @State private var targetDate: Date
     
     init(viewModel: DeadlineViewModel, item: DeadlineItem) {
         self.viewModel = viewModel
         self.item = item
         _title = State(initialValue: item.title)
+        _details = State(initialValue: item.details)
         _targetDate = State(initialValue: item.targetDate)
     }
     
@@ -314,6 +396,11 @@ struct EditDeadlineView: View {
                 Section(header: Text("Edit Deadline Details")) {
                     TextField("Enter deadline title", text: $title)
                     DatePicker("Select target date", selection: $targetDate, displayedComponents: [.date, .hourAndMinute])
+                }
+                
+                Section(header: Text("Description")) {
+                    TextEditor(text: $details)
+                        .frame(minHeight: 120)
                 }
 
                 Section {
@@ -328,6 +415,7 @@ struct EditDeadlineView: View {
                             viewModel.updateDeadline(
                                 id: item.id,
                                 newTitle: title,
+                                newDetails: details,
                                 newTargetDate: targetDate
                             )
                             presentationMode.wrappedValue.dismiss()
@@ -348,6 +436,7 @@ struct ContentView: View {
     @StateObject private var viewModel: DeadlineViewModel
     @State private var isShowingAddSheet = false
     @State private var itemToEdit: DeadlineItem?
+    @State private var selection = Set<UUID>()
     
     /// Closure to handle the "Close Vault" action.
     var onClose: () -> Void
@@ -359,46 +448,60 @@ struct ContentView: View {
 
     var body: some View {
         HStack {
-            List {
-                // Filter Segmented Control
+            VStack(spacing: 0) {
                 Picker("Filter", selection: $viewModel.filterOption) {
                     ForEach(FilterOption.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
                 .pickerStyle(SegmentedPickerStyle())
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
                 .padding(.bottom, 8)
                 
-                // Deadline List
-                ForEach(viewModel.filteredDeadlines) { item in
-                    DeadlineRow(item: item, viewModel: viewModel)
-                        .padding(.vertical, 8)
-                        .contextMenu {
-                            Button(action: {
-                                itemToEdit = item
-                            }) {
-                                Text("Edit")
-                                Image(systemName: "pencil")
-                            }
-                            
-                            Button(action: {
-                                viewModel.toggleCompletion(for: item)
-                            }) {
-                                Text(item.isCompleted ? "Mark as Incomplete" : "Mark as Complete")
-                                Image(systemName: item.isCompleted ? "arrow.uturn.backward" : "checkmark")
-                            }
-                        }
+                List {
+                    ForEach(viewModel.filteredDeadlines) { item in
+                        DeadlineRow(item: item, viewModel: viewModel)
+                            .tag(item.id)
+                            .padding(.vertical, 8)
+                            .contextMenu {
+                                Button(action: {
+                                    itemToEdit = item
+                                }) {
+                                    Text("Edit")
+                                    Image(systemName: "pencil")
+                                }
+                                
+                                Button(action: {
+                                    viewModel.toggleCompletion(for: item)
+                                }) {
+                                    Text(item.isCompleted ? "Mark as Incomplete" : "Mark as Complete")
+                                    Image(systemName: item.isCompleted ? "arrow.uturn.backward" : "checkmark")
+                                }
+                                
+                                Button(role: .destructive, action: {
+                                    viewModel.delete(item: item)
+                                }) {
+                                    Text("Delete")
+                                    Image(systemName: "trash")
+                                }
+                            }.listRowBackground(Color.clear) 
+
+                    }
+                    .onDelete(perform: viewModel.delete)
+                }
+                .listStyle(SidebarListStyle())
+                .onDeleteCommand {
+                    viewModel.delete(itemsWithIDs: selection)
+                    selection.removeAll()
                 }
             }
             .navigationTitle("Deadline Monitor")
-            // Use SidebarListStyle for standard macOS sidebar appearance
-            .listStyle(SidebarListStyle())
             .toolbar {
                 // Leading Toolbar Item: Close Vault
                 ToolbarItem(placement: .navigation) {
                     Button(action: onClose) {
                         Image(systemName: "xmark.circle")
-                        Text("Close Vault")
                     }
                 }
                 
@@ -422,6 +525,13 @@ struct ContentView: View {
                 }
             }
         }
+        .alert(item: $viewModel.activeAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
         .sheet(isPresented: $isShowingAddSheet) {
             AddDeadlineView(viewModel: viewModel)
         }
@@ -439,6 +549,7 @@ struct DeadlineRow: View {
     @ObservedObject var viewModel: DeadlineViewModel
     
     var body: some View {
+        let trimmedDetails = item.details.trimmingCharacters(in: .whitespacesAndNewlines)
         HStack(spacing: 12) {
             // Urgency Indicator Bar
             Capsule()
@@ -456,6 +567,13 @@ struct DeadlineRow: View {
                 Text(item.targetDate, style: .date) + Text(" ") + Text(item.targetDate, style: .time)
                     .font(.caption) // Secondary/Caption style
                     .foregroundColor(.secondary)
+                
+                if !trimmedDetails.isEmpty {
+                    Text(trimmedDetails)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
             
             Spacer()
